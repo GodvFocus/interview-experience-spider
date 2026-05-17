@@ -1,0 +1,4 @@
+requests>=2.31.0
+PyExecJS>=1.5.1
+markdown>=3.5.0
+mcp>=1.0.0

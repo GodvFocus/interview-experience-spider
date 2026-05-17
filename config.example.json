@@ -1,0 +1,46 @@
+{
+  "_comment": "复制此文件为 config.json，填入你的配置。config.json 已加入 .gitignore，不会被上传。",
+
+  "nowcoder": {
+    "queries": [
+      "字节飞书后端实习",
+      "字节飞书 golang 面经",
+      "字节飞书服务端实习面经",
+      "字节飞书暑期实习面经"
+    ],
+    "max_pages": 3,
+    "delay_seconds": 0.8
+  },
+
+  "xiaohongshu": {
+    "enabled": true,
+    "_cookie_help": "见 docs/get-xhs-cookies.md，Cookie 约1天过期",
+    "cookies": {
+      "a1": "填入你的 a1 cookie 值",
+      "web_session": "填入你的 web_session cookie 值",
+      "webId": "填入你的 webId cookie 值",
+      "gid": "填入你的 gid cookie 值"
+    },
+    "queries": [
+      "字节飞书面试",
+      "字节飞书后端面经",
+      "字节飞书实习 golang"
+    ],
+    "max_pages": 3,
+    "delay_seconds": 0.8
+  },
+
+  "filter": {
+    "mode": "all",
+    "_mode_options": "all = 全部保留(去掉运营销售等) | backend = 只保留后端/Go相关",
+    "backend_keywords": ["后端", "golang", "go语言", "服务端", "backend", "全栈"],
+    "exclude_keywords": ["运营", "销售", "ux设计", "产品经理", "数据分析", "市场营销"]
+  },
+
+  "output": {
+    "dir": "./output",
+    "title": "面试备考手册",
+    "formats": ["md", "html"],
+    "max_content_length": 2000
+  }
+}
