@@ -9,7 +9,7 @@
 ## 📸 效果预览
 
 - 搜索关键词 → 自动抓取数十/数百篇面经原文
-- 生成带侧边导航栏、代码高亮、暗色主题的离线 HTML 手册
+- 生成带领域导航、完整原文附录和固定浅色主题的离线 HTML 手册
 - 支持作为 MCP 工具，让 AI 帮你自动收集和整理
 
 ---
@@ -74,6 +74,24 @@ cp config.example.json config.json
 
 > **如何获取小红书 Cookie？** 见 [docs/get-xhs-cookies.md](docs/get-xhs-cookies.md)
 
+### DeepSeek 配置
+
+报告生成会把过滤后的完整面经原文提交给 DeepSeek，使用返回结果提取面试题并归入固定领域。请在被 Git 忽略的 `config.json` 中补充：
+
+```json
+{
+  "deepseek": {
+    "api_key": "你的 DeepSeek API key",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "batch_max_articles": 5,
+    "batch_max_chars": 12000
+  }
+}
+```
+
+`config.example.json` 已提供空的 API key 占位值。API key 不得提交到 Git，也不会写入报告、请求日志或错误信息；缺少或无效时本次报告会直接失败，不会生成伪分类结果。每次生成都会重新调用 DeepSeek，不使用分类缓存；文章总长度、模型结果和请求次数会影响耗时与费用。
+
 ### 第五步：一键运行
 
 ```bash
@@ -82,7 +100,9 @@ python3 run_all.py
 
 运行完成后，在 `output/` 目录找到：
 - `面经备考手册.md` — Markdown 格式
-- `面经备考手册.html` — 可直接用浏览器打开的离线手册
+- `面经备考手册.html` — 可直接用浏览器打开的固定浅色离线手册
+
+报告按以下固定顺序组织：Java语法、JUC、JVM、消息队列、MySQL、Redis、Spring全家桶、计算机网络、Agent、场景题、其他。题目只在主领域展示一次，其他领域标签仍保留在分类数据中；方案设计、故障排查、容量规划、一致性处理和工程权衡优先归入“场景题”。Markdown 与 HTML 都保留所有参与分类的完整面经原文，HTML 原文默认折叠。
 
 ---
 
@@ -196,6 +216,15 @@ A: Cookie 已过期，需要重新获取。见 [docs/get-xhs-cookies.md](docs/ge
 
 **Q: 生成的 HTML 乱码？**
 A: 用 Chrome 或 Safari 打开，确保浏览器编码为 UTF-8。
+
+**Q: 为什么报告生成直接失败？**
+A: 请检查 `config.json` 中的 `deepseek.api_key`、服务地址和模型名。API key 为空、鉴权失败或服务拒绝请求时，系统会停止整次生成，避免输出不完整报告。
+
+**Q: 如何清理报告？**
+A: 在 HTML 页面点击题目旁的“删除”，页面会软删除题目并实时更新统计；“撤销删除”只恢复最近一次操作。“下载清理版 HTML”会在浏览器本地生成独立文件，不会修改 JSON、原始 HTML、Markdown 或原文附录。导出的清理版仍可继续编辑和再次导出，刷新原始报告会恢复未导出的删除状态。
+
+**Q: 报告是否截断文章或限制每个平台 30 篇？**
+A: 不会。分类使用过滤后的所有文章和完整正文；动态分批只控制请求边界，单篇超过字符上限时仍会完整独占一个请求。
 
 ---
 

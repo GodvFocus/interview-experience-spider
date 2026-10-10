@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-面经猎手 MCP Server
-让 Cursor / Claude 可以直接调用本工具
+面经猎手 MCP Server。
+
+该服务复用命令行报告入口，因此 MCP、命令行和一键运行使用同一份 DeepSeek
+配置、来源过滤、动态分批与失败语义。
 
 配置方法（~/.cursor/mcp.json）：
 {
@@ -12,10 +14,11 @@
     }
   }
 }
-
-然后在 Cursor 中说："帮我搜索字节飞书后端面经"
 """
-import os, sys, json
+
+import json
+import os
+import sys
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,79 +26,77 @@ try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     print("❌ 缺少 mcp 库，请运行: pip3 install mcp", file=sys.stderr)
-    sys.exit(1)
+    raise SystemExit(1)
+
 
 mcp = FastMCP("面经猎手 Interview Spider")
-
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
-OUTPUT_DIR  = "output"
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(PROJECT_DIR, "config.json")
 
 
 def _load_config() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    """读取统一配置；配置错误交由具体工具返回中文错误。"""
+
+    if not os.path.exists(CONFIG_FILE):
+        return {}
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as handle:
+            config = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return config if isinstance(config, dict) else {}
 
 
-# ===== Tool 1: 搜索牛客网 =====
+def _output_dir(config: dict) -> str:
+    return config.get("output", {}).get("dir", "output")
+
+
+def _report_error(error: Exception) -> str:
+    from generate_report import ReportGenerationError
+
+    if isinstance(error, ReportGenerationError):
+        return f"❌ {error}"
+    return f"❌ 生成失败: {error}"
+
+
 @mcp.tool()
 def search_nowcoder(
     query: str,
     pages: int = 3,
-    output_file: str = "output/nowcoder.json"
+    output_file: str = "output/nowcoder.json",
 ) -> str:
-    """
-    搜索牛客网面经，并保存到 JSON 文件。
-    
-    参数:
-      query       - 搜索关键词，如"字节飞书后端实习"
-      pages       - 搜索页数（默认3页，每页约20条）
-      output_file - 结果保存路径
-    
-    返回:
-      抓取结果摘要
-    """
+    """搜索牛客网面经并保存 JSON。"""
+
     try:
         from scrape_nowcoder import run
+
         posts = run(
             queries=[query],
             max_pages=pages,
             delay=0.8,
             output_file=output_file,
-            verbose=False
+            verbose=False,
         )
-        titles = [f"• {p['title'][:40]}" for p in posts[:5]]
+        titles = [f"• {post['title'][:40]}" for post in posts[:5]]
         return (
-            f"✅ 牛客网搜索完成\n"
-            f"关键词：{query}\n"
-            f"共找到 {len(posts)} 篇面经\n"
-            f"保存到：{os.path.abspath(output_file)}\n\n"
-            f"前5篇标题：\n" + "\n".join(titles)
+            f"✅ 牛客网搜索完成\n关键词：{query}\n共找到 {len(posts)} 篇面经\n"
+            f"保存到：{os.path.abspath(output_file)}\n\n前5篇标题：\n"
+            + "\n".join(titles)
         )
-    except Exception as e:
-        return f"❌ 搜索失败: {e}"
+    except Exception as exc:
+        return f"❌ 搜索失败: {exc}"
 
 
-# ===== Tool 2: 搜索小红书 =====
 @mcp.tool()
 def search_xiaohongshu(
     query: str,
     pages: int = 3,
-    output_file: str = "output/xiaohongshu.json"
+    output_file: str = "output/xiaohongshu.json",
 ) -> str:
-    """
-    搜索小红书面经（需要在 config.json 中配置 Cookie）。
-    
-    参数:
-      query       - 搜索关键词，如"字节飞书面试"
-      pages       - 搜索页数
-      output_file - 结果保存路径
-    
-    Cookie 配置见 docs/get-xhs-cookies.md
-    """
-    cfg     = _load_config()
-    cookies = cfg.get("xiaohongshu", {}).get("cookies", {})
+    """搜索小红书面经；Cookie 仍从 config.json 读取。"""
+
+    config = _load_config()
+    cookies = config.get("xiaohongshu", {}).get("cookies", {})
     if not cookies.get("a1") or "填入" in cookies.get("a1", ""):
         return (
             "❌ 小红书 Cookie 未配置\n"
@@ -104,179 +105,168 @@ def search_xiaohongshu(
         )
     try:
         from scrape_xhs import run
+
         posts = run(
             queries=[query],
             cookies=cookies,
             max_pages=pages,
             delay=0.8,
             output_file=output_file,
-            verbose=False
+            verbose=False,
         )
-        titles = [f"• {p['title'][:40]}" for p in posts[:5]]
+        titles = [f"• {post['title'][:40]}" for post in posts[:5]]
         return (
-            f"✅ 小红书搜索完成\n"
-            f"关键词：{query}\n"
-            f"共找到 {len(posts)} 篇\n"
-            f"保存到：{os.path.abspath(output_file)}\n\n"
-            f"前5篇标题：\n" + "\n".join(titles)
+            f"✅ 小红书搜索完成\n关键词：{query}\n共找到 {len(posts)} 篇\n"
+            f"保存到：{os.path.abspath(output_file)}\n\n前5篇标题：\n"
+            + "\n".join(titles)
         )
-    except Exception as e:
-        return f"❌ 搜索失败: {e}"
+    except Exception as exc:
+        return f"❌ 搜索失败: {exc}"
 
 
-# ===== Tool 3: 生成报告 =====
 @mcp.tool()
 def generate_report(
-    title: str = "面经备考手册",
+    title: str = "",
     nc_file: str = "output/nowcoder.json",
     xhs_file: str = "output/xiaohongshu.json",
-    filter_mode: str = "all"
+    filter_mode: str = "all",
 ) -> str:
-    """
-    根据已抓取的面经数据，生成 MD + HTML 报告。
-    
-    参数:
-      title       - 报告标题
-      nc_file     - 牛客数据 JSON 路径
-      xhs_file    - 小红书数据 JSON 路径
-      filter_mode - "all"（全部）或 "backend"（只保留后端/Go相关）
-    
-    返回:
-      生成的文件路径
-    """
+    """使用 config.json 的统一 DeepSeek 配置生成 MD 与 HTML 报告。"""
+
+    config = _load_config()
+    output_config = config.get("output", {})
+    report_title = title or output_config.get("title", "面经备考手册")
+    output_dir = _output_dir(config)
     try:
         from generate_report import run
+
         results = run(
             nc_file=nc_file,
             xhs_file=xhs_file,
-            output_dir=OUTPUT_DIR,
-            title=title,
+            output_dir=output_dir,
+            title=report_title,
             filter_mode=filter_mode,
-            formats=["md", "html"],
-            verbose=False
+            formats=output_config.get("formats", ["md", "html"]),
+            config=config,
+            verbose=False,
         )
         lines = ["✅ 报告生成完成"]
-        for fmt, path in results.items():
-            lines.append(f"  {fmt.upper()} → {os.path.abspath(path)}")
+        lines.extend(f"  {fmt.upper()} → {os.path.abspath(path)}" for fmt, path in results.items())
         return "\n".join(lines)
-    except Exception as e:
-        return f"❌ 生成失败: {e}"
+    except Exception as exc:
+        return _report_error(exc)
 
 
-# ===== Tool 4: 一键全流程 =====
 @mcp.tool()
 def collect_all(
     company: str = "字节飞书",
     position: str = "后端实习",
-    filter_mode: str = "all"
+    filter_mode: str = "all",
 ) -> str:
-    """
-    一键全流程：自动构建搜索关键词 → 爬取牛客+小红书 → 生成 HTML 报告。
-    
-    参数:
-      company     - 公司名，如"字节飞书"、"腾讯微信"
-      position    - 岗位名，如"后端实习"、"golang开发"
-      filter_mode - "all" 或 "backend"
-    
-    用法示例：
-      collect_all("字节飞书", "服务端实习")
-      collect_all("腾讯", "C++客户端")
-    """
-    cfg     = _load_config()
-    cookies = cfg.get("xiaohongshu", {}).get("cookies", {})
-    has_xhs = bool(cookies.get("a1") and "填入" not in cookies.get("a1", ""))
+    """一键搜索牛客与小红书，并使用同一份配置生成报告。"""
 
+    config = _load_config()
+    try:
+        from generate_report import DeepSeekClassifier, get_deepseek_config
+
+        DeepSeekClassifier.from_config(get_deepseek_config(config))
+    except Exception as exc:
+        return _report_error(exc)
+    cookies = config.get("xiaohongshu", {}).get("cookies", {})
+    has_xhs = bool(cookies.get("a1") and "填入" not in cookies.get("a1", ""))
+    output_dir = _output_dir(config)
+    os.makedirs(output_dir, exist_ok=True)
+    nc_file = os.path.join(output_dir, "nowcoder.json")
+    xhs_file = os.path.join(output_dir, "xiaohongshu.json")
     queries = [
         f"{company}{position}",
         f"{company} {position} 面经",
         f"{company} {position} golang",
         f"{company} {position} 一面 二面",
     ]
+    summary = [f"🚀 开始收集：{company} {position}\n"]
 
-    results_summary = [f"🚀 开始收集：{company} {position}\n"]
-
-    # 爬取牛客
     try:
         from scrape_nowcoder import run as nc_run
-        nc_posts = nc_run(
-            queries=queries,
-            max_pages=cfg.get("nowcoder", {}).get("max_pages", 3),
-            delay=0.8,
-            output_file=f"output/nowcoder.json",
-            verbose=False
-        )
-        results_summary.append(f"✅ 牛客网：{len(nc_posts)} 篇")
-    except Exception as e:
-        results_summary.append(f"❌ 牛客网失败: {e}")
-        nc_posts = []
 
-    # 爬取小红书
+        nc_config = config.get("nowcoder", {})
+        posts = nc_run(
+            queries=queries,
+            max_pages=nc_config.get("max_pages", 3),
+            delay=nc_config.get("delay_seconds", 0.8),
+            output_file=nc_file,
+            verbose=False,
+        )
+        summary.append(f"✅ 牛客网：{len(posts)} 篇")
+    except Exception as exc:
+        summary.append(f"❌ 牛客网失败: {exc}")
+
     if has_xhs:
         try:
             from scrape_xhs import run as xhs_run
-            xhs_posts = xhs_run(
+
+            xhs_config = config.get("xiaohongshu", {})
+            posts = xhs_run(
                 queries=queries,
                 cookies=cookies,
-                max_pages=cfg.get("xiaohongshu", {}).get("max_pages", 3),
-                delay=0.8,
-                output_file=f"output/xiaohongshu.json",
-                verbose=False
+                max_pages=xhs_config.get("max_pages", 3),
+                delay=xhs_config.get("delay_seconds", 0.8),
+                output_file=xhs_file,
+                verbose=False,
             )
-            results_summary.append(f"✅ 小红书：{len(xhs_posts)} 篇")
-        except Exception as e:
-            results_summary.append(f"❌ 小红书失败: {e}")
+            summary.append(f"✅ 小红书：{len(posts)} 篇")
+        except Exception as exc:
+            summary.append(f"❌ 小红书失败: {exc}")
     else:
-        results_summary.append("⚠️  小红书未配置 Cookie，已跳过")
+        summary.append("⚠️  小红书未配置 Cookie，已跳过")
 
-    # 生成报告
+    output_config = config.get("output", {})
     try:
-        from generate_report import run as report_run
-        title   = f"{company} {position} 面经备考手册"
-        results = report_run(
-            nc_file="output/nowcoder.json",
-            xhs_file="output/xiaohongshu.json",
-            output_dir=OUTPUT_DIR,
-            title=title,
+        from generate_report import run
+
+        results = run(
+            nc_file=nc_file,
+            xhs_file=xhs_file,
+            output_dir=output_dir,
+            title=f"{company} {position} 面经备考手册",
             filter_mode=filter_mode,
-            formats=["md", "html"],
-            verbose=False
+            formats=output_config.get("formats", ["md", "html"]),
+            config=config,
+            verbose=False,
         )
-        for fmt, path in results.items():
-            results_summary.append(f"📄 {fmt.upper()} → {os.path.abspath(path)}")
-    except Exception as e:
-        results_summary.append(f"❌ 报告生成失败: {e}")
-
-    return "\n".join(results_summary)
+        summary.extend(f"📄 {fmt.upper()} → {os.path.abspath(path)}" for fmt, path in results.items())
+    except Exception as exc:
+        summary.append(_report_error(exc))
+    return "\n".join(summary)
 
 
-# ===== Tool 5: 查看已有数据 =====
 @mcp.tool()
-def list_collected(
-    source: str = "all"
-) -> str:
-    """
-    查看已收集的面经数据摘要。
-    
-    参数:
-      source - "nowcoder"、"xiaohongshu" 或 "all"
-    """
+def list_collected(source: str = "all") -> str:
+    """查看已经收集的面经数据摘要。"""
+
+    output_dir = _output_dir(_load_config())
     lines = []
     files = {
-        "nowcoder":    "output/nowcoder.json",
-        "xiaohongshu": "output/xiaohongshu.json",
+        "nowcoder": os.path.join(output_dir, "nowcoder.json"),
+        "xiaohongshu": os.path.join(output_dir, "xiaohongshu.json"),
     }
-    for src, path in files.items():
-        if source not in ("all", src):
+    for source_name, path in files.items():
+        if source not in ("all", source_name):
             continue
         if os.path.exists(path):
-            data = json.load(open(path, encoding="utf-8"))
-            lines.append(f"📁 {src}（{len(data)} 篇）→ {os.path.abspath(path)}")
-            for i, d in enumerate(data[:5]):
-                lines.append(f"   {i+1}. {d.get('title','无标题')[:45]}")
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                lines.append(f"📁 {source_name} → 数据文件无法读取（{path}）")
+                continue
+            lines.append(f"📁 {source_name}（{len(data)} 篇）→ {os.path.abspath(path)}")
+            for index, item in enumerate(data[:5], start=1):
+                lines.append(f"   {index}. {item.get('title', '无标题')[:45]}")
             if len(data) > 5:
                 lines.append(f"   ... 共 {len(data)} 篇")
         else:
-            lines.append(f"📁 {src} → 暂无数据（{path} 不存在）")
+            lines.append(f"📁 {source_name} → 暂无数据（{path} 不存在）")
         lines.append("")
     return "\n".join(lines) if lines else "暂无已收集的数据"
 

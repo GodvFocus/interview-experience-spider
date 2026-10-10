@@ -37,10 +37,19 @@
     "exclude_keywords": ["运营", "销售", "ux设计", "产品经理", "数据分析", "市场营销"]
   },
 
+  "deepseek": {
+    "_comment": "API key 只填写在被 Git 忽略的 config.json 中，不要提交或写入报告。",
+    "api_key": "",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "batch_max_articles": 5,
+    "batch_max_chars": 12000,
+    "timeout_seconds": 60
+  },
+
   "output": {
     "dir": "./output",
     "title": "面试备考手册",
-    "formats": ["md", "html"],
-    "max_content_length": 2000
+    "formats": ["md", "html"]
   }
 }
