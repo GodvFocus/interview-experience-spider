@@ -121,6 +121,7 @@ class GenerateReportTests(unittest.TestCase):
             self.assertIn("下载清理版 HTML", html)
             self.assertIn('class="delete-question"', html)
             self.assertIn('id="undo-delete"', html)
+            self.assertIn("data-nav-question-count", html)
             self.assertIn("data-domain-section", html)
             self.assertIn("new Blob", html)
             self.assertIn("&lt;标题&gt;", html)
@@ -141,6 +142,22 @@ class GenerateReportTests(unittest.TestCase):
                     verbose=False,
                 )
             self.assertFalse(output_dir.exists())
+
+    def test_missing_api_key_is_checked_before_reading_source_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            nc_file = Path(temp_dir) / "broken.json"
+            nc_file.write_text("不是 JSON", encoding="utf-8")
+            xhs_file = write_posts(temp_dir, "xhs.json", [])
+
+            with self.assertRaisesRegex(ReportGenerationError, "API key"):
+                run(
+                    nc_file=str(nc_file),
+                    xhs_file=xhs_file,
+                    output_dir=str(Path(temp_dir) / "reports"),
+                    title="缺 key 优先",
+                    config={"deepseek": {"api_key": ""}},
+                    verbose=False,
+                )
 
     def test_batch_limits_and_long_article_are_preserved(self):
         articles = (

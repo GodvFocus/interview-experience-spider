@@ -858,7 +858,10 @@ _INTERACTION_JS = r"""
     });
     document.querySelectorAll('[data-domain-nav]').forEach((link) => {
       const domain = link.dataset.domain;
-      link.hidden = visible.every((card) => card.dataset.domain !== domain);
+      const domainCards = visible.filter((card) => card.dataset.domain === domain);
+      link.hidden = domainCards.length === 0;
+      const count = link.querySelector('[data-nav-question-count]');
+      if (count) count.textContent = String(domainCards.length);
     });
 
     undoButton.hidden = undoStack.length === 0;
@@ -955,7 +958,8 @@ def build_html(report: ReportData, title: str | None = None) -> str:
         nav_links.append(
             f'<a class="nav-link" data-domain-nav data-domain="{_html_attr(domain)}" '
             f'href="#{_domain_anchor(domain)}">'
-            f'<span>{_html_text(domain)}</span><span class="nav-count">{count}</span></a>'
+            f'<span>{_html_text(domain)}</span>'
+            f'<span class="nav-count" data-nav-question-count>{count}</span></a>'
         )
 
     question_numbers = {id(question): index for index, question in enumerate(report.questions, 1)}
@@ -1116,6 +1120,18 @@ def run(
         raise ReportGenerationError("filter 配置必须是对象。")
     backend_keywords = filter_config.get("backend_keywords")
     exclude_keywords = filter_config.get("exclude_keywords")
+
+    deepseek_config = get_deepseek_config(config)
+    if classifier is None:
+        classifier = DeepSeekClassifier.from_config(deepseek_config)
+    values = dict(DEFAULT_DEEPSEEK_CONFIG)
+    values.update(deepseek_config)
+    try:
+        max_articles = int(values["batch_max_articles"])
+        max_chars = int(values["batch_max_chars"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ReportGenerationError("batch_max_articles 和 batch_max_chars 必须是整数。") from exc
+
     nc_posts = _load_posts(
         nc_file,
         "nowcoder",
@@ -1131,17 +1147,6 @@ def run(
         exclude_keywords,
     )
     articles = _build_articles(nc_posts, xhs_posts)
-
-    deepseek_config = get_deepseek_config(config)
-    if classifier is None:
-        classifier = DeepSeekClassifier.from_config(deepseek_config)
-    values = dict(DEFAULT_DEEPSEEK_CONFIG)
-    values.update(deepseek_config)
-    try:
-        max_articles = int(values["batch_max_articles"])
-        max_chars = int(values["batch_max_chars"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ReportGenerationError("batch_max_articles 和 batch_max_chars 必须是整数。") from exc
 
     try:
         questions = classify_articles(
