@@ -74,23 +74,53 @@ cp config.example.json config.json
 
 > **如何获取小红书 Cookie？** 见 [docs/get-xhs-cookies.md](docs/get-xhs-cookies.md)
 
-### DeepSeek 配置
+### 分类器配置
 
-报告生成会把过滤后的完整面经原文提交给 DeepSeek，使用返回结果提取面试题并归入固定领域。请在被 Git 忽略的 `config.json` 中补充：
+默认分类器是本机 Codex CLI。它复用 `codex login` 保存的 ChatGPT 登录态，消耗现有 Codex/ChatGPT 订阅额度，不需要 DeepSeek API key。先确认：
+
+```bash
+codex --version
+codex login status
+```
+
+首次使用若尚未登录，请执行 `codex login`。`config.json` 中的默认配置如下：
 
 ```json
 {
-  "deepseek": {
-    "api_key": "你的 DeepSeek API key",
-    "base_url": "https://api.deepseek.com",
-    "model": "deepseek-flash",
+  "classifier": {
+    "provider": "codex",
     "batch_max_articles": 5,
     "batch_max_chars": 12000
+  },
+  "codex": {
+    "command": "codex",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "max",
+    "timeout_seconds": 300
   }
 }
 ```
 
-`config.example.json` 已提供空的 API key 占位值。API key 不得提交到 Git，也不会写入报告、请求日志或错误信息；缺少或无效时本次报告会直接失败，不会生成伪分类结果。每次生成都会重新调用 DeepSeek，不使用分类缓存；文章总长度、模型结果和请求次数会影响耗时与费用。
+默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。分类以非交互、临时会话、只读沙箱运行，并通过 JSON Schema 返回结构化结果。订阅方式不会产生 DeepSeek API 费用，但仍会占用 ChatGPT/Codex 方案额度；`max` 相比低档位通常耗时更长、消耗更多额度，额度耗尽时整次报告会失败。
+
+如需切回 DeepSeek，可改为：
+
+```json
+{
+  "classifier": {
+    "provider": "deepseek",
+    "batch_max_articles": 5,
+    "batch_max_chars": 12000
+  },
+  "deepseek": {
+    "api_key": "你的 DeepSeek API key",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash"
+  }
+}
+```
+
+DeepSeek API key 只允许写入被 Git 忽略的 `config.json`，不得提交，也不会写入报告、请求日志或错误信息。两种后端都会在每次生成时重新分类，不使用历史缓存；文章总长度、模型结果和请求次数会影响耗时和额度或费用。
 
 ### 第五步：一键运行
 
@@ -218,7 +248,7 @@ A: Cookie 已过期，需要重新获取。见 [docs/get-xhs-cookies.md](docs/ge
 A: 用 Chrome 或 Safari 打开，确保浏览器编码为 UTF-8。
 
 **Q: 为什么报告生成直接失败？**
-A: 请检查 `config.json` 中的 `deepseek.api_key`、服务地址和模型名。API key 为空、鉴权失败或服务拒绝请求时，系统会停止整次生成，避免输出不完整报告。
+A: 默认 Codex 后端请运行 `codex login status`，并检查 Codex CLI 是否在 `PATH`、订阅额度是否可用，以及 `codex.model` 是否为当前账号可用模型。使用 DeepSeek 时，再检查 `deepseek.api_key`、服务地址和模型名。任一分类后端失败时，系统都会停止整次生成，避免输出不完整报告。
 
 **Q: 如何清理报告？**
 A: 在 HTML 页面点击题目旁的“删除”，页面会软删除题目并实时更新统计；“撤销删除”只恢复最近一次操作。“下载清理版 HTML”会在浏览器本地生成独立文件，不会修改 JSON、原始 HTML、Markdown 或原文附录。导出的清理版仍可继续编辑和再次导出，刷新原始报告会恢复未导出的删除状态。

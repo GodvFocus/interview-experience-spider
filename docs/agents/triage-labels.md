@@ -12,4 +12,6 @@ Engineering skills 使用五种规范 triage 角色。下表定义这些角色�
 
 当 skill 提到某个角色，例如“应用 AFK-ready triage 标签”时，使用本表对应的标签字符串。
 
+`resolved` 表示实现与适用验收已经完成的终态，不参与 triage，也不替代上表中的任何未完成状态。
+
 如需适配现有词汇，可修改中间一列。

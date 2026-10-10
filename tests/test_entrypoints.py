@@ -12,6 +12,7 @@ import run_all
 class EntrypointTests(unittest.TestCase):
     def test_run_all_passes_the_loaded_config_to_report_generator(self):
         config = {
+            "classifier": {"provider": "deepseek"},
             "deepseek": {
                 "api_key": "test-key",
                 "base_url": "https://example.com",
@@ -60,6 +61,7 @@ class EntrypointTests(unittest.TestCase):
 
     def test_run_all_rejects_missing_deepseek_key_before_report_step(self):
         config = {
+            "classifier": {"provider": "deepseek"},
             "deepseek": {"api_key": ""},
             "output": {"dir": "", "title": "缺 key", "formats": ["md", "html"]},
         }

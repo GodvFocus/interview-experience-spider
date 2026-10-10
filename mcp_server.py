@@ -2,7 +2,7 @@
 """
 面经猎手 MCP Server。
 
-该服务复用命令行报告入口，因此 MCP、命令行和一键运行使用同一份 DeepSeek
+该服务复用命令行报告入口，因此 MCP、命令行和一键运行使用同一份分类器
 配置、来源过滤、动态分批与失败语义。
 
 配置方法（~/.cursor/mcp.json）：
@@ -134,7 +134,7 @@ def generate_report(
     xhs_file: str = "output/xiaohongshu.json",
     filter_mode: str = "all",
 ) -> str:
-    """使用 config.json 的统一 DeepSeek 配置生成 MD 与 HTML 报告。"""
+    """使用 config.json 的统一分类器配置生成 MD 与 HTML 报告。"""
 
     config = _load_config()
     output_config = config.get("output", {})
@@ -170,9 +170,9 @@ def collect_all(
 
     config = _load_config()
     try:
-        from generate_report import DeepSeekClassifier, get_deepseek_config
+        from generate_report import build_classifier
 
-        DeepSeekClassifier.from_config(get_deepseek_config(config))
+        build_classifier(config)
     except Exception as exc:
         return _report_error(exc)
     cookies = config.get("xiaohongshu", {}).get("cookies", {})

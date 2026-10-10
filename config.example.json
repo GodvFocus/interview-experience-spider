@@ -37,13 +37,26 @@
     "exclude_keywords": ["运营", "销售", "ux设计", "产品经理", "数据分析", "市场营销"]
   },
 
+  "classifier": {
+    "_comment": "默认使用本机 Codex CLI 和 ChatGPT 登录态；可改为 deepseek。",
+    "provider": "codex",
+    "batch_max_articles": 5,
+    "batch_max_chars": 12000
+  },
+
+  "codex": {
+    "_comment": "默认固定使用 GPT-5.6 Luna 及其最高 reasoning effort=max；运行前先执行 codex login。",
+    "command": "codex",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "max",
+    "timeout_seconds": 300
+  },
+
   "deepseek": {
-    "_comment": "API key 只填写在被 Git 忽略的 config.json 中，不要提交或写入报告。",
+    "_comment": "仅当 classifier.provider=deepseek 时使用；API key 不要提交或写入报告。",
     "api_key": "",
     "base_url": "https://api.deepseek.com",
     "model": "deepseek-flash",
-    "batch_max_articles": 5,
-    "batch_max_chars": 12000,
     "timeout_seconds": 60
   },
 

@@ -8,7 +8,8 @@
 - Spec 文件为 `.scratch/<feature-slug>/spec.md`
 - 每个实现任务使用单独的 issue 文件，路径为 `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 - Issue 从 `01` 开始编号，不使用单个合并的 tickets 文件
-- Triage 状态记录在 issue 文件顶部附近的 `Status:` 行中，角色字符串见 `triage-labels.md`
+- 未完成 issue 的 triage 状态记录在顶部附近的 `Status:` 行中，角色字符串见 `triage-labels.md`
+- 实现与适用验收全部完成后，将 `Status:` 改为 `resolved`；`resolved` 是终态，不属于 triage 标签
 - 评论和讨论历史追加到文件末尾的 `## Comments` 标题下
 
 ## 当 skill 要求“发布到 issue tracker”时

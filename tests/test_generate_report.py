@@ -2,13 +2,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from generate_report import (
     Article,
     ClassificationError,
+    CodexClassifier,
     DeepSeekClassifier,
     ReportGenerationError,
     build_article_batches,
+    build_classifier,
     run,
     validate_classification_result,
 )
@@ -138,7 +142,10 @@ class GenerateReportTests(unittest.TestCase):
                     xhs_file=xhs_file,
                     output_dir=str(output_dir),
                     title="不会生成",
-                    config={"deepseek": {"api_key": ""}},
+                    config={
+                        "classifier": {"provider": "deepseek"},
+                        "deepseek": {"api_key": ""},
+                    },
                     verbose=False,
                 )
             self.assertFalse(output_dir.exists())
@@ -155,7 +162,10 @@ class GenerateReportTests(unittest.TestCase):
                     xhs_file=xhs_file,
                     output_dir=str(Path(temp_dir) / "reports"),
                     title="缺 key 优先",
-                    config={"deepseek": {"api_key": ""}},
+                    config={
+                        "classifier": {"provider": "deepseek"},
+                        "deepseek": {"api_key": ""},
+                    },
                     verbose=False,
                 )
 
@@ -330,6 +340,87 @@ class GenerateReportTests(unittest.TestCase):
         self.assertIn("完整正文" * 20, request["json"]["messages"][1]["content"])
         self.assertIn("article-0001", request["json"]["messages"][1]["content"])
         self.assertNotIn("sk-secret", request["json"]["messages"][1]["content"])
+
+    def test_codex_classifier_uses_subscription_cli_and_strict_schema(self):
+        captured = {}
+
+        def runner(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            schema_path = Path(command[command.index("--output-schema") + 1])
+            output_path = Path(command[command.index("--output-last-message") + 1])
+            captured["schema"] = json.loads(schema_path.read_text(encoding="utf-8"))
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "article_id": "article-0001",
+                                "question": "Redis 如何避免缓存击穿？",
+                                "primary_domain": "Redis",
+                                "domains": ["Redis"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        classifier = CodexClassifier(
+            command="codex-test",
+            model="test-model",
+            reasoning_effort="low",
+            timeout_seconds=30,
+            runner=runner,
+        )
+        article = Article(
+            "article-0001",
+            "nowcoder",
+            "完整标题",
+            "https://example.com/article",
+            "完整正文：Redis 如何避免缓存击穿？",
+        )
+        result = classifier.classify([article])
+
+        self.assertEqual(result["questions"][0]["primary_domain"], "Redis")
+        self.assertIn("完整正文：Redis 如何避免缓存击穿？", captured["kwargs"]["input"])
+        self.assertIn("--ephemeral", captured["command"])
+        self.assertIn("read-only", captured["command"])
+        self.assertIn("--ignore-user-config", captured["command"])
+        self.assertIn("--skip-git-repo-check", captured["command"])
+        self.assertIn("test-model", captured["command"])
+        article_id_schema = captured["schema"]["properties"]["questions"]["items"][
+            "properties"
+        ]["article_id"]
+        self.assertEqual(article_id_schema["enum"], ["article-0001"])
+
+    def test_codex_auth_failure_is_not_retried(self):
+        def runner(_command, **_kwargs):
+            return SimpleNamespace(returncode=1, stdout="", stderr="Not logged in")
+
+        classifier = CodexClassifier(command="codex-test", runner=runner)
+        article = Article("article-0001", "nowcoder", "文章", "https://a", "正文")
+        with self.assertRaisesRegex(ClassificationError, "codex login") as error:
+            classifier.classify([article])
+        self.assertFalse(error.exception.retryable)
+
+    def test_default_production_classifier_is_codex(self):
+        with patch("generate_report.shutil.which", return_value="codex"):
+            classifier = build_classifier({})
+        self.assertIsInstance(classifier, CodexClassifier)
+        self.assertEqual(classifier.model, "gpt-5.6-luna")
+        self.assertEqual(classifier.reasoning_effort, "max")
+
+    def test_deepseek_remains_an_explicit_optional_provider(self):
+        classifier = build_classifier(
+            {
+                "classifier": {"provider": "deepseek"},
+                "deepseek": {"api_key": "test-key"},
+            }
+        )
+        self.assertIsInstance(classifier, DeepSeekClassifier)
 
     def test_untrusted_titles_questions_and_sources_are_escaped_in_html(self):
         with tempfile.TemporaryDirectory() as temp_dir:

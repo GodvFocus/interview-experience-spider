@@ -2,21 +2,27 @@
 
 本工具支持作为 MCP（Model Context Protocol）服务运行，让 Cursor、Claude Desktop 等 AI 工具直接调用。
 
-报告工具与命令行、一键运行共用 `config.json`。调用 `generate_report` 或 `collect_all` 前，请先配置 `deepseek`：
+报告工具与命令行、一键运行共用 `config.json`。默认通过本机 Codex CLI 使用 ChatGPT/Codex 订阅额度。调用 `generate_report` 或 `collect_all` 前，请先确认 `codex --version` 与 `codex login status` 正常，并配置：
 
 ```json
 {
-  "deepseek": {
-    "api_key": "你的 DeepSeek API key",
-    "base_url": "https://api.deepseek.com",
-    "model": "deepseek-flash",
+  "classifier": {
+    "provider": "codex",
     "batch_max_articles": 5,
     "batch_max_chars": 12000
+  },
+  "codex": {
+    "command": "codex",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "max",
+    "timeout_seconds": 300
   }
 }
 ```
 
-API key 只允许保存在被 Git 忽略的 `config.json`，不要放入 MCP 配置、日志或报告。key 缺失、鉴权失败或 DeepSeek 无法完成某篇面经的分类时，整次报告会失败，不会输出不完整结果。每次生成都会重新分类，不使用历史缓存；动态分批会影响请求次数、耗时和费用。
+Codex 分类运行在非交互、临时会话和只读沙箱中；默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。它不产生 DeepSeek API 费用，但会占用 ChatGPT/Codex 方案额度，且 `max` 相比低档位通常耗时更长、消耗更多额度。Codex 未登录、额度不可用或无法完成某篇面经的分类时，整次报告会失败，不会输出不完整结果。
+
+如需使用 DeepSeek，将 `classifier.provider` 改为 `deepseek`，并在被 Git 忽略的 `config.json` 中配置 `deepseek.api_key`、`base_url` 和 `model`。API key 不要放入 MCP 配置、日志或报告。两种后端每次生成都会重新分类，不使用历史缓存；动态分批会影响请求次数、耗时和额度或费用。
 
 ---
 

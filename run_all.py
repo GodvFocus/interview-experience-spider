@@ -88,10 +88,10 @@ def main() -> int:
     with open(args.config, encoding="utf-8") as handle:
         cfg = json.load(handle)
 
-    from generate_report import DeepSeekClassifier, ReportGenerationError, get_deepseek_config
+    from generate_report import ReportGenerationError, build_classifier
 
     try:
-        DeepSeekClassifier.from_config(get_deepseek_config(cfg))
+        build_classifier(cfg)
     except ReportGenerationError as exc:
         print(f"❌ 报告配置无效: {exc}", file=sys.stderr)
         return 1
