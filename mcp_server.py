@@ -25,7 +25,10 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
-    print("❌ 缺少 mcp 库，请运行: pip3 install mcp", file=sys.stderr)
+    print(
+        "❌ 未安装或版本不兼容的 mcp 库，请运行: pip3 install -r requirements.txt（需要 mcp 1.x）",
+        file=sys.stderr,
+    )
     raise SystemExit(1)
 
 
