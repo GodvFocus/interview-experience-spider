@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -219,6 +221,61 @@ class GenerateReportTests(unittest.TestCase):
         self.assertEqual(len(questions), 2)
         self.assertEqual(classifier.calls[:3], [["article-0001", "article-0002"]] * 3)
         self.assertEqual(classifier.calls[3:], [["article-0001"], ["article-0002"]])
+
+    def test_parallel_batches_keep_input_order(self):
+        class ParallelClassifier:
+            def __init__(self):
+                self._lock = threading.Lock()
+                self.active = 0
+                self.max_active = 0
+
+            def classify(self, articles):
+                with self._lock:
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                try:
+                    time.sleep(0.03)
+                    return {
+                        "questions": [
+                            {
+                                "article_id": article.article_id,
+                                "question": f"问题 {article.article_id}",
+                                "primary_domain": "Java语法",
+                                "domains": ["Java语法"],
+                            }
+                            for article in articles
+                        ]
+                    }
+                finally:
+                    with self._lock:
+                        self.active -= 1
+
+        from generate_report import classify_articles
+
+        articles = tuple(
+            Article(
+                f"article-{index:04d}",
+                "nowcoder",
+                f"文章{index}",
+                f"https://example.com/{index}",
+                "正文",
+            )
+            for index in range(1, 5)
+        )
+        classifier = ParallelClassifier()
+        questions = classify_articles(
+            articles,
+            classifier,
+            max_articles=2,
+            max_chars=12000,
+            max_workers=2,
+        )
+
+        self.assertGreaterEqual(classifier.max_active, 2)
+        self.assertEqual(
+            [question.article_id for question in questions],
+            [article.article_id for article in articles],
+        )
 
     def test_single_article_failure_stops_generation_without_leaking_key(self):
         class AlwaysFailClassifier:

@@ -9,7 +9,8 @@
   "classifier": {
     "provider": "codex",
     "batch_max_articles": 5,
-    "batch_max_chars": 12000
+    "batch_max_chars": 12000,
+    "max_workers": 4
   },
   "codex": {
     "command": "codex",
@@ -20,7 +21,7 @@
 }
 ```
 
-Codex 分类运行在非交互、临时会话和只读沙箱中；默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。它不产生 DeepSeek API 费用，但会占用 ChatGPT/Codex 方案额度，且 `max` 相比低档位通常耗时更长、消耗更多额度。Codex 未登录、额度不可用或无法完成某篇面经的分类时，整次报告会失败，不会输出不完整结果。
+Codex 分类运行在非交互、临时会话和只读沙箱中；默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。`max_workers` 控制同时处理的批次数，设为 1 可关闭并行；并发值越大，等待时间通常越短，但同时消耗的额度和触发限流的可能性也越高。它不产生 DeepSeek API 费用，但会占用 ChatGPT/Codex 方案额度，且 `max` 相比低档位通常耗时更长、消耗更多额度。Codex 未登录、额度不可用或无法完成某篇面经的分类时，整次报告会失败，不会输出不完整结果。
 
 如需使用 DeepSeek，将 `classifier.provider` 改为 `deepseek`，并在被 Git 忽略的 `config.json` 中配置 `deepseek.api_key`、`base_url` 和 `model`。API key 不要放入 MCP 配置、日志或报告。两种后端每次生成都会重新分类，不使用历史缓存；动态分批会影响请求次数、耗时和额度或费用。
 

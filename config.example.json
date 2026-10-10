@@ -41,7 +41,8 @@
     "_comment": "默认使用本机 Codex CLI 和 ChatGPT 登录态；可改为 deepseek。",
     "provider": "codex",
     "batch_max_articles": 5,
-    "batch_max_chars": 12000
+    "batch_max_chars": 12000,
+    "max_workers": 4
   },
 
   "codex": {

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import html
 import json
 import os
@@ -45,6 +46,7 @@ DEFAULT_CLASSIFIER_CONFIG = {
     "provider": "codex",
     "batch_max_articles": 5,
     "batch_max_chars": 12000,
+    "max_workers": 1,
 }
 DEFAULT_CODEX_CONFIG = {
     "command": "codex",
@@ -870,12 +872,35 @@ def classify_articles(
     classifier: Any,
     max_articles: int = 5,
     max_chars: int = 12000,
+    max_workers: int = 1,
 ) -> tuple[ClassifiedQuestion, ...]:
     """按动态批次调用分类器，并执行重试、拆分和严格结果校验。"""
 
-    questions: list[ClassifiedQuestion] = []
-    for batch in build_article_batches(articles, max_articles, max_chars):
-        questions.extend(_classify_batch_with_recovery(batch, classifier))
+    try:
+        max_workers = int(max_workers)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("max_workers 必须是正整数。") from exc
+    if max_workers <= 0:
+        raise ValueError("max_workers 必须是正整数。")
+
+    batches = list(build_article_batches(articles, max_articles, max_chars))
+    if max_workers == 1 or len(batches) <= 1:
+        questions: list[ClassifiedQuestion] = []
+        for batch in batches:
+            questions.extend(_classify_batch_with_recovery(batch, classifier))
+        return tuple(questions)
+
+    # 每个批次只返回内存中的分类结果，统一按提交顺序收集，避免并行完成顺序影响报告稳定性。
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="interview-classifier"
+    ) as executor:
+        futures = [
+            executor.submit(_classify_batch_with_recovery, batch, classifier)
+            for batch in batches
+        ]
+        questions = []
+        for future in futures:
+            questions.extend(future.result())
     return tuple(questions)
 
 
@@ -1428,8 +1453,11 @@ def run(
     try:
         max_articles = int(classifier_config["batch_max_articles"])
         max_chars = int(classifier_config["batch_max_chars"])
+        max_workers = int(classifier_config["max_workers"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise ReportGenerationError("batch_max_articles 和 batch_max_chars 必须是整数。") from exc
+        raise ReportGenerationError(
+            "batch_max_articles、batch_max_chars 和 max_workers 必须是整数。"
+        ) from exc
 
     nc_posts = _load_posts(
         nc_file,
@@ -1453,6 +1481,7 @@ def run(
             classifier,
             max_articles=max_articles,
             max_chars=max_chars,
+            max_workers=max_workers,
         )
     except ValueError as exc:
         raise ReportGenerationError(f"分类批次配置无效：{exc}") from exc

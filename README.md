@@ -90,7 +90,8 @@ codex login status
   "classifier": {
     "provider": "codex",
     "batch_max_articles": 5,
-    "batch_max_chars": 12000
+    "batch_max_chars": 12000,
+    "max_workers": 4
   },
   "codex": {
     "command": "codex",
@@ -101,7 +102,7 @@ codex login status
 }
 ```
 
-默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。分类以非交互、临时会话、只读沙箱运行，并通过 JSON Schema 返回结构化结果。订阅方式不会产生 DeepSeek API 费用，但仍会占用 ChatGPT/Codex 方案额度；`max` 相比低档位通常耗时更长、消耗更多额度，额度耗尽时整次报告会失败。
+默认固定使用 `gpt-5.6-luna`，并将 `reasoning_effort` 设为该模型支持的最高档 `max`。分类以非交互、临时会话、只读沙箱运行，并通过 JSON Schema 返回结构化结果。`max_workers` 控制同时处理的批次数；设为 1 可关闭并行，较大的值会缩短等待时间，但会增加同时消耗的订阅额度和触发限流的可能性。订阅方式不会产生 DeepSeek API 费用，但仍会占用 ChatGPT/Codex 方案额度；`max` 相比低档位通常耗时更长、消耗更多额度，额度耗尽时整次报告会失败。
 
 如需切回 DeepSeek，可改为：
 
@@ -110,7 +111,8 @@ codex login status
   "classifier": {
     "provider": "deepseek",
     "batch_max_articles": 5,
-    "batch_max_chars": 12000
+    "batch_max_chars": 12000,
+    "max_workers": 4
   },
   "deepseek": {
     "api_key": "你的 DeepSeek API key",
