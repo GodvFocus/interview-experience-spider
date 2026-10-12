@@ -1048,7 +1048,7 @@ button { font: inherit; }
   margin-left: 256px;
   padding: 40px 48px 72px;
 }
-.hero, .toolbar, .summary, .domain-section, .sources {
+.hero, .toolbar, .summary, .domain-section {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -1078,11 +1078,7 @@ button { font: inherit; }
 .source-link { display: inline-block; max-width: 100%; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); overflow-wrap: anywhere; font-size: 13px; }
 .delete-question { flex: 0 0 auto; cursor: pointer; border: 0; border-radius: 7px; padding: 5px 8px; background: transparent; color: var(--muted); font-size: 13px; }
 .delete-question:hover { background: #fff0ef; color: var(--danger); }
-.sources { margin-top: 34px; padding: 22px; }
-.source-entry { margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); scroll-margin-top: 20px; }
-.source-entry summary { cursor: pointer; padding: 12px 14px; font-weight: 600; overflow-wrap: anywhere; }
-.source-meta { padding: 0 14px; color: var(--muted); font-size: 13px; }
-.source-content { margin: 12px 14px 16px; padding: 14px; border-radius: 8px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.source-link-unavailable { color: var(--muted); cursor: default; }
 [hidden] { display: none !important; }
 @media (max-width: 820px) {
   .site-nav { position: sticky; top: 0; width: 100%; height: auto; max-height: none; padding: 10px 14px; border-right: 0; border-bottom: 1px solid var(--border); }
@@ -1090,7 +1086,7 @@ button { font: inherit; }
   .nav-links { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
   .nav-link { flex: 0 0 auto; white-space: nowrap; }
   .content { width: 100%; margin-left: 0; padding: 18px 14px 50px; }
-  .hero, .domain-section, .sources { border-radius: 12px; padding: 18px; }
+  .hero, .domain-section { border-radius: 12px; padding: 18px; }
   .summary { border-radius: 12px; padding: 12px; }
 }
 """
@@ -1207,8 +1203,6 @@ def _render_domain_summary(report: ReportData) -> str:
         '<div class="summary-card"><strong data-total-visible-sources>'
         f"{len({question.article_id for question in report.questions})}</strong>"
         "<span>当前可见来源文章</span></div>",
-        '<div class="summary-card"><strong>'
-        f"{len(report.articles)}</strong><span>完整原文附录</span></div>",
     ]
     for domain in report.visible_domains:
         count = len(report.questions_for_domain(domain))
@@ -1245,6 +1239,19 @@ def build_html(report: ReportData, title: str | None = None) -> str:
         for question in report.questions_for_domain(domain):
             number = question_numbers[id(question)]
             article = report.articles_by_id[question.article_id]
+            article_url = _safe_external_url(article.url)
+            if article_url:
+                source_link = (
+                    f'<a class="source-link" href="{_html_attr(article_url)}" '
+                    'target="_blank" rel="noopener noreferrer">'
+                    f"来源：{_html_text(article.title)}</a>"
+                )
+            else:
+                source_link = (
+                    '<span class="source-link source-link-unavailable" '
+                    'aria-label="来源文章链接不可用">'
+                    f"来源：{_html_text(article.title)}</span>"
+                )
             question_cards.append(
                 f'<article class="question-card" data-domain="{_html_attr(domain)}" '
                 f'data-source-id="{_html_attr(article.article_id)}" '
@@ -1252,8 +1259,7 @@ def build_html(report: ReportData, title: str | None = None) -> str:
                 '<div class="question-main">'
                 f'<h3 class="question-text"><span class="question-number">{number}. </span>'
                 f"{_html_text(question.question)}</h3>"
-                f'<a class="source-link" href="#{_html_attr(article.anchor)}">'
-                f"来源：{_html_text(article.title)}</a>"
+                f"{source_link}"
                 "</div>"
                 '<button type="button" class="delete-question" aria-label="删除这道题">删除</button>'
                 "</article>"
@@ -1264,24 +1270,6 @@ def build_html(report: ReportData, title: str | None = None) -> str:
             f"<h2>{_html_text(domain)}</h2>"
             + "".join(question_cards)
             + "</section>"
-        )
-
-    source_entries = []
-    for article in report.articles:
-        external = ""
-        if article.url:
-            external = (
-                f'<a href="{_html_attr(article.url)}" rel="noopener noreferrer" target="_blank">'
-                f"{_html_text(article.url)}</a>"
-            )
-        source_entries.append(
-            f'<details class="source-entry" id="{_html_attr(article.anchor)}">'
-            f'<summary>{_html_text(article.title)}</summary>'
-            f'<div class="source-meta">来源平台：{_html_text(article.source_name)}'
-            + (f"；原始链接：{external}" if external else "")
-            + "</div>"
-            f'<pre class="source-content">{_html_text(article.content)}</pre>'
-            "</details>"
         )
 
     return f"""<!doctype html>
@@ -1301,7 +1289,7 @@ def build_html(report: ReportData, title: str | None = None) -> str:
   <main class="content">
     <header class="hero" id="top">
       <h1>{_html_text(report_title)}</h1>
-      <p>按固定知识领域整理真实面试题，来源原文保留在页面末尾。</p>
+      <p>按固定知识领域整理真实面试题，题目旁的来源标题可打开来源平台原文。</p>
     </header>
     <div class="toolbar" aria-label="报告清理操作">
       <button type="button" class="button" id="undo-delete" hidden>撤销删除</button>
@@ -1314,10 +1302,6 @@ def build_html(report: ReportData, title: str | None = None) -> str:
     <section aria-labelledby="domain-title">
       <h2 class="report-section-title" id="domain-title">分类题目</h2>
       {''.join(sections) if sections else '<p>当前没有可展示的面试题。</p>'}
-    </section>
-    <section class="sources" aria-labelledby="source-title" id="sources">
-      <h2 class="report-section-title" id="source-title">面经原文</h2>
-      {''.join(source_entries) if source_entries else '<p>当前没有参与分类的面经原文。</p>'}
     </section>
   </main>
 </div>

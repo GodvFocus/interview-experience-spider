@@ -57,18 +57,18 @@ class GenerateReportTests(unittest.TestCase):
             {
                 "title": "Java 面经 <标题>",
                 "content": "明确问题：如何保证线程安全？\n" + "完整正文" * 100,
-                "url": "https://example.com/java",
+                "url": "https://www.nowcoder.com/discuss/123456789",
                 "source": "nowcoder",
             },
             {
                 "title": "Redis 场景面经",
                 "content": "请设计一个缓存系统，并说明一致性处理。",
-                "url": "https://example.com/redis",
+                "url": "https://www.xiaohongshu.com/explore/abcdef1234567890",
                 "source": "xiaohongshu",
             },
         ]
 
-    def test_report_follows_fixed_domains_and_keeps_full_sources(self):
+    def test_report_follows_fixed_domains_and_keeps_markdown_sources(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             nc_file = write_posts(temp_dir, "nc.json", self.make_posts()[:1])
             xhs_file = write_posts(temp_dir, "xhs.json", self.make_posts()[1:])
@@ -121,9 +121,25 @@ class GenerateReportTests(unittest.TestCase):
             self.assertIn("source-article-0002", markdown)
             self.assertIn("--bg: #f5f7fb", html)
             self.assertIn("Spring全家桶", html)
-            self.assertIn("<details", html)
-            self.assertEqual(html.count('id="source-article-0001"'), 1)
-            self.assertEqual(html.count('id="source-article-0002"'), 1)
+            self.assertNotIn("<details", html)
+            self.assertNotIn("完整正文" * 100, html)
+            self.assertNotIn("source-article-0001", html)
+            self.assertNotIn("source-article-0002", html)
+            self.assertNotIn('href="#source-article-', html)
+            self.assertNotIn("面经原文</h2>", html)
+            self.assertNotIn("完整原文附录", html)
+            self.assertIn(
+                'href="https://www.nowcoder.com/discuss/123456789" '
+                'target="_blank" rel="noopener noreferrer">'
+                "来源：Java 面经 &lt;标题&gt;</a>",
+                html,
+            )
+            self.assertIn(
+                'href="https://www.xiaohongshu.com/explore/abcdef1234567890" '
+                'target="_blank" rel="noopener noreferrer">'
+                "来源：Redis 场景面经</a>",
+                html,
+            )
             self.assertIn("下载清理版 HTML", html)
             self.assertIn('class="delete-question"', html)
             self.assertIn('id="undo-delete"', html)
@@ -479,7 +495,7 @@ class GenerateReportTests(unittest.TestCase):
         )
         self.assertIsInstance(classifier, DeepSeekClassifier)
 
-    def test_untrusted_titles_questions_and_sources_are_escaped_in_html(self):
+    def test_untrusted_titles_and_questions_are_escaped_and_sources_are_safe_in_html(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             nc_file = write_posts(
                 temp_dir,
@@ -521,9 +537,44 @@ class GenerateReportTests(unittest.TestCase):
             self.assertNotIn("<script>alert(1)</script>", html)
             self.assertNotIn("<script>alert(2)</script>", html)
             self.assertNotIn("<img src=x onerror=alert(4)>", html)
-            self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
-            self.assertIn("&lt;script&gt;alert(2)&lt;/script&gt;", html)
             self.assertNotIn("javascript:alert(3)", html)
+            self.assertNotIn("&lt;script&gt;alert(2)&lt;/script&gt;", html)
+            self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+            self.assertIn("&lt;img src=x onerror=alert(4)&gt;", html)
+            self.assertIn('class="source-link source-link-unavailable"', html)
+
+    def test_missing_source_url_is_rendered_as_non_clickable_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            nc_file = write_posts(
+                temp_dir,
+                "nc.json",
+                [
+                    {
+                        "title": "缺少链接的面经",
+                        "content": "明确问题：什么是线程安全？",
+                        "source": "nowcoder",
+                    }
+                ],
+            )
+            xhs_file = write_posts(temp_dir, "xhs.json", [])
+            result = run(
+                nc_file=nc_file,
+                xhs_file=xhs_file,
+                output_dir=str(Path(temp_dir) / "reports"),
+                title="缺失链接测试",
+                classifier=DeterministicClassifier(),
+                config={"deepseek": {}},
+                verbose=False,
+            )
+
+            html = Path(result["html"]).read_text(encoding="utf-8")
+            self.assertIn(
+                '<span class="source-link source-link-unavailable" '
+                'aria-label="来源文章链接不可用">来源：缺少链接的面经</span>',
+                html,
+            )
+            self.assertNotIn('href=""', html)
+            self.assertNotIn("明确问题：什么是线程安全？", html)
 
     def test_invalid_result_is_retried_before_success(self):
         class FlakyClassifier:
