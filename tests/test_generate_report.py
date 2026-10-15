@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import threading
 import time
 import tempfile
@@ -12,10 +13,13 @@ from generate_report import (
     Article,
     ClassificationError,
     CodexClassifier,
+    ClassifiedQuestion,
     DeepSeekClassifier,
+    ReportData,
     ReportGenerationError,
     build_article_batches,
     build_classifier,
+    build_html,
     run,
     validate_classification_result,
 )
@@ -148,6 +152,42 @@ class GenerateReportTests(unittest.TestCase):
             self.assertIn("data-domain-section", html)
             self.assertIn("new Blob", html)
             self.assertIn("&lt;标题&gt;", html)
+
+    def test_favorite_identity_survives_question_and_source_reordering(self):
+        article = Article("article-0001", "nowcoder", "面经", "https://example.com/1", "原文")
+        question = ClassifiedQuestion(article.article_id, "如何保证线程安全？", "JUC", ("JUC",))
+        original = build_html(ReportData("收藏测试", (article,), (question,)))
+        moved_article = Article("article-0009", article.source, article.title, article.url, article.content)
+        moved_question = ClassifiedQuestion(moved_article.article_id, question.question, "Java语法", ("Java语法",))
+        extra = ClassifiedQuestion(moved_article.article_id, "另一个问题", "JUC", ("JUC",))
+        reordered = build_html(ReportData("收藏测试", (moved_article,), (extra, moved_question)))
+        original_key = re.findall(r'data-favorite-key="([a-f0-9]+)"', original)[0]
+        reordered_keys = re.findall(r'data-favorite-key="([a-f0-9]+)"', reordered)
+        self.assertIn(original_key, reordered_keys)
+        self.assertEqual(len(set(reordered_keys)), 2)
+
+    def test_favorites_keep_same_question_from_different_sources_separate(self):
+        articles = (
+            Article("article-0001", "nowcoder", "面经一", "https://example.com/1", "原文一"),
+            Article("article-0002", "nowcoder", "面经二", "https://example.com/2", "原文二"),
+        )
+        questions = tuple(
+            ClassifiedQuestion(article.article_id, "相同问题", "JUC", ("JUC",))
+            for article in articles
+        )
+        html = build_html(ReportData("收藏测试", articles, questions))
+        keys = re.findall(r'data-favorite-key="([a-f0-9]+)"', html)
+        self.assertEqual(len(set(keys)), 2)
+        self.assertEqual(html.count('class="favorite-question"'), 2)
+        self.assertIn('href="#favorites"', html)
+        self.assertIn('id="favorites-empty"', html)
+
+    def test_empty_report_still_offers_an_empty_favorites_section(self):
+        html = build_html(ReportData("空报告", (), ()))
+        self.assertIn('href="#favorites"', html)
+        self.assertIn('id="favorite-list"', html)
+        self.assertIn("还没有收藏题目", html)
+        self.assertNotIn('class="favorite-question"', html)
 
     def test_missing_api_key_fails_before_writing_report(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import html
 import json
 import os
@@ -1079,6 +1080,12 @@ button { font: inherit; }
 .question-main { min-width: 0; flex: 1; }
 .question-text { margin: 0 0 7px; font-size: 17px; line-height: 1.55; overflow-wrap: anywhere; }
 .question-number { color: var(--muted); font-weight: 600; }
+.favorite-question { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: 6px; padding: 0; vertical-align: middle; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 25px; line-height: 1; cursor: pointer; }
+.favorite-question:hover { background: #fff7db; color: #926500; }
+.favorite-question[aria-pressed="true"] { color: #926500; }
+.favorite-question:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.favorites-note, .favorites-empty { color: var(--muted); font-size: 14px; }
+.favorites-note { margin: -4px 0 14px; }
 .source-link { display: inline-block; max-width: 100%; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); overflow-wrap: anywhere; font-size: 13px; }
 .delete-question { flex: 0 0 auto; cursor: pointer; border: 0; border-radius: 7px; padding: 5px 8px; background: transparent; color: var(--muted); font-size: 13px; }
 .delete-question:hover { background: #fff0ef; color: var(--danger); }
@@ -1092,15 +1099,85 @@ button { font: inherit; }
   .content { width: 100%; margin-left: 0; padding: 18px 14px 50px; }
   .hero, .domain-section { border-radius: 12px; padding: 18px; }
   .summary { border-radius: 12px; padding: 12px; }
+  .domain-section, .report-section-title, #summary { scroll-margin-top: 128px; }
 }
 """
 
 
 _INTERACTION_JS = r"""
 (function () {
-  const cards = Array.from(document.querySelectorAll('.question-card'));
+  // 收藏夹是主领域题目的副本，统计与清理始终以原题为准。
+  const cards = Array.from(document.querySelectorAll('[data-domain-section] .question-card'));
   const undoStack = [];
   const undoButton = document.getElementById('undo-delete');
+  const favoriteList = document.getElementById('favorite-list');
+  const storageKey = 'interview-report:favorites:v1:' + document.querySelector('meta[name="interview-report-id"]').content;
+  let favoriteStates = {};
+  let storageAvailable = true;
+
+  try {
+    const stored = localStorage.getItem(storageKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          Object.entries(parsed).forEach(([key, value]) => {
+            if (typeof value === 'boolean') favoriteStates[key] = value;
+          });
+        }
+      } catch (_) {
+        // 损坏的存储不应阻止阅读，下一次星标操作会重新写入。
+      }
+    }
+  } catch (_) {
+    storageAvailable = false;
+  }
+
+  const favorites = new Set(cards.filter((card) => {
+    const key = card.dataset.favoriteKey;
+    // 显式保存取消状态，避免导出的星标题目在刷新后重新出现。
+    return Object.prototype.hasOwnProperty.call(favoriteStates, key)
+      ? favoriteStates[key] : card.dataset.favorited === 'true';
+  }).map((card) => card.dataset.favoriteKey));
+
+  function saveFavorites(key, value) {
+    favoriteStates[key] = value;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(favoriteStates));
+      storageAvailable = true;
+    } catch (_) {
+      storageAvailable = false;
+    }
+  }
+
+  function refreshFavorites(visible) {
+    cards.forEach((card) => {
+      const selected = favorites.has(card.dataset.favoriteKey);
+      card.dataset.favorited = String(selected);
+      const button = card.querySelector('.favorite-question');
+      button.textContent = selected ? '★' : '☆';
+      button.setAttribute('aria-pressed', String(selected));
+      button.setAttribute('aria-label', selected ? '取消收藏这道题' : '收藏这道题');
+      button.title = selected ? '取消收藏' : '收藏';
+    });
+    const copies = [];
+    const seen = new Set();
+    visible.forEach((card) => {
+      const key = card.dataset.favoriteKey;
+      if (!favorites.has(key) || seen.has(key)) return;
+      seen.add(key);
+      const copy = card.cloneNode(true);
+      copy.removeAttribute('data-question-id');
+      copy.querySelector('.delete-question').remove();
+      copies.push(copy);
+    });
+    favoriteList.replaceChildren(...copies);
+    setText('[data-favorite-count]', copies.length);
+    document.getElementById('favorites-empty').hidden = copies.length > 0;
+    const status = document.getElementById('favorite-status');
+    status.hidden = storageAvailable;
+    status.textContent = storageAvailable ? '' : '当前浏览器无法保存收藏，刷新可能丢失；可下载 HTML 保留星标。';
+  }
 
   function visibleCards() {
     return cards.filter((card) => !card.hidden);
@@ -1113,6 +1190,7 @@ _INTERACTION_JS = r"""
 
   function refresh() {
     const visible = visibleCards();
+    refreshFavorites(visible);
     const visibleSources = new Set(visible.map((card) => card.dataset.sourceId));
     setText('[data-total-visible-questions]', visible.length);
     setText('[data-total-visible-sources]', visibleSources.size);
@@ -1144,13 +1222,28 @@ _INTERACTION_JS = r"""
     setText('#cleanup-status', visible.length === cards.length ? '' : '当前页面已清理，可撤销最近一次删除。');
   }
 
-  cards.forEach((card) => {
-    const deleteButton = card.querySelector('.delete-question');
-    deleteButton.addEventListener('click', function () {
-      card.hidden = true;
-      undoStack.push(card);
+  document.addEventListener('click', function (event) {
+    const star = event.target.closest('.favorite-question');
+    if (star) {
+      const key = star.closest('.question-card').dataset.favoriteKey;
+      const selected = !favorites.has(key);
+      if (selected) favorites.add(key);
+      else favorites.delete(key);
+      saveFavorites(key, selected);
       refresh();
-    });
+      if (!star.isConnected) {
+        const original = cards.find((card) => !card.hidden && card.dataset.favoriteKey === key);
+        if (original) original.querySelector('.favorite-question').focus({ preventScroll: true });
+      }
+      return;
+    }
+    const deleteButton = event.target.closest('.delete-question');
+    if (!deleteButton) return;
+    const card = deleteButton.closest('.question-card');
+    if (!cards.includes(card) || card.hidden) return;
+    card.hidden = true;
+    undoStack.push(card);
+    refresh();
   });
 
   undoButton.addEventListener('click', function () {
@@ -1161,6 +1254,8 @@ _INTERACTION_JS = r"""
 
   document.getElementById('export-clean-report').addEventListener('click', function () {
     const clone = document.documentElement.cloneNode(true);
+    // 导出只保留原题与星标快照，打开时重新建立收藏夹，避免重复计数。
+    clone.querySelector('#favorite-list').replaceChildren();
     clone.querySelectorAll('.question-card[hidden]').forEach((card) => card.remove());
     clone.querySelectorAll('[data-domain-section]').forEach((section) => {
       if (!section.querySelector('.question-card')) section.remove();
@@ -1200,6 +1295,30 @@ def _html_attr(value: Any) -> str:
     return html.escape(_as_text(value), quote=True)
 
 
+def _favorite_key(question: ClassifiedQuestion, article: Article) -> str:
+    """使用原文身份与题目文本关联收藏，避免报告重排导致星标错位。"""
+
+    source = _safe_external_url(article.url) or [article.source, article.title, article.content]
+    value = json.dumps([source, question.question.strip()], ensure_ascii=False)
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+_FAVORITE_BUTTON_HTML = (
+    '<button type="button" class="favorite-question" aria-pressed="false" '
+    'aria-label="收藏这道题" title="收藏">☆</button>'
+)
+_FAVORITES_NAV_HTML = (
+    '<a class="nav-link" href="#favorites"><span>★ 收藏夹</span>'
+    '<span class="nav-count" data-favorite-count>0</span></a>'
+)
+_FAVORITES_SECTION_HTML = """<section class="domain-section" id="favorites" aria-labelledby="favorites-title">
+      <h2 id="favorites-title">收藏夹</h2>
+      <p class="favorites-note">点击题目后的星星收藏或取消收藏；收藏保存在当前浏览器，下载清理版 HTML 可保留当前星标。</p>
+      <p class="favorites-empty" id="favorites-empty">还没有收藏题目，点击题目后的 ☆ 即可加入收藏夹。</p>
+      <div id="favorite-list"></div>
+    </section>"""
+
+
 def _render_domain_summary(report: ReportData) -> str:
     cards = [
         '<div class="summary-card"><strong data-total-visible-questions>'
@@ -1221,11 +1340,12 @@ def _render_domain_summary(report: ReportData) -> str:
 
 
 def build_html(report: ReportData, title: str | None = None) -> str:
-    """渲染固定浅色、响应式且支持页面内清理的 HTML 报告。"""
+    """渲染固定浅色、响应式且支持收藏与页面内清理的 HTML 报告。"""
 
     report_title = title or report.title
     nav_links = [
         '<a class="nav-link" href="#summary">概览</a>',
+        _FAVORITES_NAV_HTML,
     ]
     for domain in report.visible_domains:
         count = len(report.questions_for_domain(domain))
@@ -1259,10 +1379,11 @@ def build_html(report: ReportData, title: str | None = None) -> str:
             question_cards.append(
                 f'<article class="question-card" data-domain="{_html_attr(domain)}" '
                 f'data-source-id="{_html_attr(article.article_id)}" '
-                f'data-question-id="question-{number:04d}">'
+                f'data-question-id="question-{number:04d}" '
+                f'data-favorite-key="{_favorite_key(question, article)}" data-favorited="false">'
                 '<div class="question-main">'
                 f'<h3 class="question-text"><span class="question-number">{number}. </span>'
-                f"{_html_text(question.question)}</h3>"
+                f"{_html_text(question.question)}{_FAVORITE_BUTTON_HTML}</h3>"
                 f"{source_link}"
                 "</div>"
                 '<button type="button" class="delete-question" aria-label="删除这道题">删除</button>'
@@ -1281,6 +1402,7 @@ def build_html(report: ReportData, title: str | None = None) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="interview-report-id" content="{hashlib.sha256(report_title.encode('utf-8')).hexdigest()}">
 <title>{_html_text(report_title)}</title>
 <style>{_LIGHT_CSS}</style>
 </head>
@@ -1299,10 +1421,12 @@ def build_html(report: ReportData, title: str | None = None) -> str:
       <button type="button" class="button" id="undo-delete" hidden>撤销删除</button>
       <button type="button" class="button primary" id="export-clean-report">下载清理版 HTML</button>
       <span class="toolbar-status" id="cleanup-status" aria-live="polite"></span>
+      <span class="toolbar-status" id="favorite-status" aria-live="polite" hidden></span>
     </div>
     <section class="summary" id="summary" aria-label="报告统计">
       {_render_domain_summary(report)}
     </section>
+    {_FAVORITES_SECTION_HTML}
     <section aria-labelledby="domain-title">
       <h2 class="report-section-title" id="domain-title">分类题目</h2>
       {''.join(sections) if sections else '<p>当前没有可展示的面试题。</p>'}
