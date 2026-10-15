@@ -83,6 +83,8 @@ codex --version
 codex login status
 ```
 
+Windows 通过 npm 安装时，`PATH` 中的入口可能是 `codex.cmd`。报告生成器会使用查找到的完整绝对路径启动 CLI，避免裸命令在 Python 子进程中触发 `WinError 2`；`codex.command` 也可填写 CLI 的完整路径。
+
 首次使用若尚未登录，请执行 `codex login`。`config.json` 中的默认配置如下：
 
 ```json

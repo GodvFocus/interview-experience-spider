@@ -548,10 +548,14 @@ class CodexClassifier:
         self.reasoning_effort = _as_text(reasoning_effort).strip().lower()
         if not self.command:
             raise ReportGenerationError("Codex command 不能为空。")
-        if runner is None and shutil.which(self.command) is None:
-            raise ReportGenerationError(
-                "未找到 Codex CLI，请先安装 Codex 并运行 codex login 登录 ChatGPT。"
-            )
+        if runner is None:
+            resolved_command = shutil.which(self.command)
+            if resolved_command is None:
+                raise ReportGenerationError(
+                    "未找到 Codex CLI，请先安装 Codex 并运行 codex login 登录 ChatGPT。"
+                )
+            # Windows 不会替裸命令补全 .cmd；固定绝对路径也避免临时目录改变相对路径。
+            self.command = os.path.abspath(resolved_command)
         if self.reasoning_effort not in self._REASONING_EFFORTS:
             raise ReportGenerationError(
                 "Codex reasoning_effort 必须是 none、minimal、low、medium、high、"

@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 import tempfile
@@ -478,6 +479,30 @@ class GenerateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ClassificationError, "codex login") as error:
             classifier.classify([article])
         self.assertFalse(error.exception.retryable)
+
+    @unittest.skipUnless(os.name == "nt", "仅 Windows 使用 npm 的 CMD 启动脚本")
+    def test_codex_starts_with_only_npm_cmd_on_path(self):
+        with tempfile.TemporaryDirectory(prefix="codex cli ") as temp_dir:
+            command_dir = Path(temp_dir) / "npm commands"
+            command_dir.mkdir()
+            (command_dir / "codex.cmd").write_text(
+                '@echo {"questions": []}\r\n', encoding="utf-8"
+            )
+            with patch.dict(os.environ, {"PATH": str(command_dir)}):
+                classifier = CodexClassifier()
+                article = Article("article-0001", "nowcoder", "文章", "https://a", "正文")
+                self.assertEqual(classifier.classify([article]), {"questions": []})
+
+    def test_codex_uses_absolute_resolved_command_in_temporary_directory(self):
+        result = SimpleNamespace(returncode=0, stdout='{"questions": []}', stderr="")
+        resolved_command = os.path.join("cli tools", "codex.exe")
+        with patch("generate_report.shutil.which", return_value=resolved_command):
+            with patch("generate_report.subprocess.run", return_value=result) as runner:
+                classifier = CodexClassifier()
+                article = Article("article-0001", "nowcoder", "文章", "https://a", "正文")
+                classifier.classify([article])
+        self.assertEqual(runner.call_args.args[0][0], os.path.abspath(resolved_command))
+        self.assertNotIn("shell", runner.call_args.kwargs)
 
     def test_default_production_classifier_is_codex(self):
         with patch("generate_report.shutil.which", return_value="codex"):
